@@ -1,0 +1,361 @@
+import pygame
+import sys
+import math
+
+# Inicialização do pygame
+pygame.init()
+
+# Constantes
+LARGURA, ALTURA = 800, 800
+LINHAS, COLUNAS = 8, 8
+TAM_QUADRADO = LARGURA // COLUNAS
+
+# Cores
+BRANCO = (255, 255, 255)
+PRETO = (0, 0, 0)
+VERMELHO = (255, 0, 0)
+AZUL = (0, 0, 255)
+CINZA = (128, 128, 128)
+DOURADO = (255, 215, 0)
+VERDE = (0, 255, 0)
+MARROM_CLARO = (240, 217, 181)
+MARROM_ESCURO = (181, 136, 99)
+
+# Configuração da tela
+tela = pygame.display.set_mode((LARGURA, ALTURA))
+pygame.display.set_caption('Jogo de Damas')
+clock = pygame.time.Clock()
+
+class Peca:
+    PADDING = 15
+    OUTLINE = 2
+    
+    def __init__(self, linha, coluna, cor):
+        self.linha = linha
+        self.coluna = coluna
+        self.cor = cor
+        self.dama = False
+        self.x = 0
+        self.y = 0
+        self.calc_pos()
+    
+    def calc_pos(self):
+        self.x = TAM_QUADRADO * self.coluna + TAM_QUADRADO // 2
+        self.y = TAM_QUADRADO * self.linha + TAM_QUADRADO // 2
+    
+    def fazer_dama(self):
+        self.dama = True
+    
+    def desenhar(self, tela):
+        raio = TAM_QUADRADO // 2 - self.PADDING
+        pygame.draw.circle(tela, CINZA, (self.x, self.y), raio + self.OUTLINE)
+        pygame.draw.circle(tela, self.cor, (self.x, self.y), raio)
+        
+        if self.dama:
+            pygame.draw.circle(tela, DOURADO, (self.x, self.y), raio - 10, 5)
+    
+    def mover(self, linha, coluna):
+        self.linha = linha
+        self.coluna = coluna
+        self.calc_pos()
+    
+    def __repr__(self):
+        return str(self.cor)
+
+class Tabuleiro:
+    def __init__(self):
+        self.tabuleiro = []
+        self.pecas_vermelhas = self.pecas_azuis = 12
+        self.damas_vermelhas = self.damas_azuis = 0
+        self.criar_tabuleiro()
+    
+    def desenhar_quadrados(self, tela):
+        tela.fill(MARROM_CLARO)
+        for linha in range(LINHAS):
+            for coluna in range(linha % 2, COLUNAS, 2):
+                pygame.draw.rect(tela, MARROM_ESCURO, 
+                               (linha * TAM_QUADRADO, coluna * TAM_QUADRADO, 
+                                TAM_QUADRADO, TAM_QUADRADO))
+    
+    def avaliar(self):
+        return self.pecas_azuis - self.pecas_vermelhas + (self.damas_azuis * 0.5 - self.damas_vermelhas * 0.5)
+    
+    def obter_todas_pecas(self, cor):
+        pecas = []
+        for linha in self.tabuleiro:
+            for peca in linha:
+                if peca != 0 and peca.cor == cor:
+                    pecas.append(peca)
+        return pecas
+    
+    def mover(self, peca, linha, coluna):
+        self.tabuleiro[peca.linha][peca.coluna], self.tabuleiro[linha][coluna] = self.tabuleiro[linha][coluna], self.tabuleiro[peca.linha][peca.coluna]
+        peca.mover(linha, coluna)
+        
+        if linha == LINHAS - 1 or linha == 0:
+            peca.fazer_dama()
+            if peca.cor == AZUL:
+                self.damas_azuis += 1
+            else:
+                self.damas_vermelhas += 1
+    
+    def obter_peca(self, linha, coluna):
+        return self.tabuleiro[linha][coluna]
+    
+    def criar_tabuleiro(self):
+        for linha in range(LINHAS):
+            self.tabuleiro.append([])
+            for coluna in range(COLUNAS):
+                if coluna % 2 == ((linha + 1) % 2):
+                    if linha < 3:
+                        self.tabuleiro[linha].append(Peca(linha, coluna, AZUL))
+                    elif linha > 4:
+                        self.tabuleiro[linha].append(Peca(linha, coluna, VERMELHO))
+                    else:
+                        self.tabuleiro[linha].append(0)
+                else:
+                    self.tabuleiro[linha].append(0)
+    
+    def desenhar(self, tela):
+        self.desenhar_quadrados(tela)
+        for linha in range(LINHAS):
+            for coluna in range(COLUNAS):
+                peca = self.tabuleiro[linha][coluna]
+                if peca != 0:
+                    peca.desenhar(tela)
+    
+    def remover(self, pecas):
+        for peca in pecas:
+            self.tabuleiro[peca.linha][peca.coluna] = 0
+            if peca != 0:
+                if peca.cor == VERMELHO:
+                    self.pecas_vermelhas -= 1
+                else:
+                    self.pecas_azuis -= 1
+    
+    def vencedor(self):
+        if self.pecas_vermelhas <= 0:
+            return AZUL
+        elif self.pecas_azuis <= 0:
+            return VERMELHO
+        return None
+    
+    def obter_movimentos_validos(self, peca):
+        movimentos = {}
+        esquerda = peca.coluna - 1
+        direita = peca.coluna + 1
+        linha = peca.linha
+        
+        if peca.cor == VERMELHO or peca.dama:
+            movimentos.update(self._percorrer_esquerda(linha - 1, max(linha - 3, -1), -1, peca.cor, esquerda))
+            movimentos.update(self._percorrer_direita(linha - 1, max(linha - 3, -1), -1, peca.cor, direita))
+        if peca.cor == AZUL or peca.dama:
+            movimentos.update(self._percorrer_esquerda(linha + 1, min(linha + 3, LINHAS), 1, peca.cor, esquerda))
+            movimentos.update(self._percorrer_direita(linha + 1, min(linha + 3, LINHAS), 1, peca.cor, direita))
+        
+        return movimentos
+    
+    def _percorrer_esquerda(self, inicio, parar, passo, cor, esquerda, saltadas=[]):
+        movimentos = {}
+        ultimo = []
+        for r in range(inicio, parar, passo):
+            if esquerda < 0:
+                break
+            
+            atual = self.tabuleiro[r][esquerda]
+            if atual == 0:
+                if saltadas and not ultimo:
+                    break
+                elif saltadas:
+                    movimentos[(r, esquerda)] = ultimo + saltadas
+                else:
+                    movimentos[(r, esquerda)] = ultimo
+                
+                if ultimo:
+                    if passo == -1:
+                        linha = max(r - 3, 0)
+                    else:
+                        linha = min(r + 3, LINHAS)
+                    movimentos.update(self._percorrer_esquerda(r + passo, linha, passo, cor, esquerda - 1, saltadas=ultimo))
+                    movimentos.update(self._percorrer_direita(r + passo, linha, passo, cor, esquerda + 1, saltadas=ultimo))
+                break
+            elif atual.cor == cor:
+                break
+            else:
+                ultimo = [atual]
+            
+            esquerda -= 1
+        
+        return movimentos
+    
+    def _percorrer_direita(self, inicio, parar, passo, cor, direita, saltadas=[]):
+        movimentos = {}
+        ultimo = []
+        for r in range(inicio, parar, passo):
+            if direita >= COLUNAS:
+                break
+            
+            atual = self.tabuleiro[r][direita]
+            if atual == 0:
+                if saltadas and not ultimo:
+                    break
+                elif saltadas:
+                    movimentos[(r, direita)] = ultimo + saltadas
+                else:
+                    movimentos[(r, direita)] = ultimo
+                
+                if ultimo:
+                    if passo == -1:
+                        linha = max(r - 3, 0)
+                    else:
+                        linha = min(r + 3, LINHAS)
+                    movimentos.update(self._percorrer_esquerda(r + passo, linha, passo, cor, direita - 1, saltadas=ultimo))
+                    movimentos.update(self._percorrer_direita(r + passo, linha, passo, cor, direita + 1, saltadas=ultimo))
+                break
+            elif atual.cor == cor:
+                break
+            else:
+                ultimo = [atual]
+            
+            direita += 1
+        
+        return movimentos
+
+class Jogo:
+    def __init__(self):
+        self._init()
+    
+    def atualizar(self):
+        self.tabuleiro.desenhar(tela)
+        self.desenhar_movimentos_validos(self.movimentos_validos)
+        pygame.display.update()
+    
+    def _init(self):
+        self.selecionada = None
+        self.tabuleiro = Tabuleiro()
+        self.turno = VERMELHO
+        self.movimentos_validos = {}
+    
+    def vencedor(self):
+        return self.tabuleiro.vencedor()
+    
+    def reiniciar(self):
+        self._init()
+    
+    def selecionar(self, linha, coluna):
+        if self.selecionada:
+            resultado = self._mover(linha, coluna)
+            if not resultado:
+                self.selecionada = None
+                self.selecionar(linha, coluna)
+        
+        peca = self.tabuleiro.obter_peca(linha, coluna)
+        if peca != 0 and peca.cor == self.turno:
+            self.selecionada = peca
+            self.movimentos_validos = self.tabuleiro.obter_movimentos_validos(peca)
+            return True
+        
+        return False
+    
+    def _mover(self, linha, coluna):
+        peca = self.tabuleiro.obter_peca(linha, coluna)
+        if self.selecionada and peca == 0 and (linha, coluna) in self.movimentos_validos:
+            self.tabuleiro.mover(self.selecionada, linha, coluna)
+            saltadas = self.movimentos_validos[(linha, coluna)]
+            if saltadas:
+                self.tabuleiro.remover(saltadas)
+            self.mudar_turno()
+        else:
+            return False
+        
+        return True
+    
+    def desenhar_movimentos_validos(self, movimentos):
+        for movimento in movimentos:
+            linha, coluna = movimento
+            pygame.draw.circle(tela, VERDE, 
+                             (coluna * TAM_QUADRADO + TAM_QUADRADO // 2, 
+                              linha * TAM_QUADRADO + TAM_QUADRADO // 2), 15)
+    
+    def mudar_turno(self):
+        self.movimentos_validos = {}
+        if self.turno == VERMELHO:
+            self.turno = AZUL
+        else:
+            self.turno = VERMELHO
+
+def obter_linha_coluna_do_mouse(pos):
+    x, y = pos
+    linha = y // TAM_QUADRADO
+    coluna = x // TAM_QUADRADO
+    return linha, coluna
+
+def desenhar_interface(jogo):
+    # Desenha informações do jogo
+    font = pygame.font.Font(None, 36)
+    
+    # Turno atual
+    turno_text = "Turno: " + ("Vermelho" if jogo.turno == VERMELHO else "Azul")
+    text_surface = font.render(turno_text, True, jogo.turno)
+    
+    # Placar
+    placar_text = f"Vermelho: {jogo.tabuleiro.pecas_vermelhas} | Azul: {jogo.tabuleiro.pecas_azuis}"
+    placar_surface = font.render(placar_text, True, PRETO)
+    
+    # Posiciona o texto (caso tenha espaço na tela)
+    # Para este exemplo, vamos apenas atualizar o título da janela
+    info = f"Damas - {turno_text} | {placar_text}"
+    pygame.display.set_caption(info)
+
+def main():
+    jogo = Jogo()
+    
+    while True:
+        clock.tick(60)
+        
+        # Verifica se há um vencedor
+        if jogo.vencedor() != None:
+            font = pygame.font.Font(None, 72)
+            vencedor_cor = "Azul" if jogo.vencedor() == AZUL else "Vermelho"
+            text = font.render(f"{vencedor_cor} Venceu!", True, PRETO)
+            text_rect = text.get_rect(center=(LARGURA//2, ALTURA//2))
+            tela.blit(text, text_rect)
+            
+            # Botão de reiniciar
+            font_pequena = pygame.font.Font(None, 36)
+            reiniciar_text = font_pequena.render("Pressione R para reiniciar", True, PRETO)
+            reiniciar_rect = reiniciar_text.get_rect(center=(LARGURA//2, ALTURA//2 + 50))
+            tela.blit(reiniciar_text, reiniciar_rect)
+            
+            pygame.display.update()
+            
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                
+                if evento.type == pygame.KEYDOWN:
+                    if evento.key == pygame.K_r:
+                        jogo.reiniciar()
+            
+            continue
+        
+        for evento in pygame.event.get():
+            if evento.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+                pos = pygame.mouse.get_pos()
+                linha, coluna = obter_linha_coluna_do_mouse(pos)
+                jogo.selecionar(linha, coluna)
+            
+            if evento.type == pygame.KEYDOWN:
+                if evento.key == pygame.K_r:
+                    jogo.reiniciar()
+        
+        desenhar_interface(jogo)
+        jogo.atualizar()
+
+if __name__ == "__main__":
+    main()
